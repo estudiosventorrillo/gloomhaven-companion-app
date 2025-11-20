@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Aplicación de ayuda fan-made para Gloomhaven: Fauces del León. Gestor de batalla y consulta de reglas.">
+    <meta name="theme-color" content="#111827">
+    
+    <!-- PWA Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://img.icons8.com/color/96/lion-head.png">
+
+    <title>Gloomhaven: Fauces del León | Companion (Fan Made)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Lato:wght@400;700&display=swap');
+        
+        :root { --gh-gold: #d4af37; --gh-red: #8b0000; --gh-dark: #0f1115; }
+        
+        body { 
+            font-family: 'Lato', sans-serif; 
+            background-color: var(--gh-dark); 
+            color: #e5e5e5; 
+            background-image: radial-gradient(circle at center, #1f2937 0%, #000000 100%);
+            overscroll-behavior-y: none;
+        }
+        
+        h1, h2, h3, .gh-font { font-family: 'Cinzel', serif; }
+        
+        /* Elementos UI */
+        .gold-border { border: 1px solid var(--gh-gold); box-shadow: 0 0 5px rgba(212, 175, 55, 0.2); }
+        .glass-panel { background: rgba(31, 41, 55, 0.95); backdrop-filter: blur(5px); border: 1px solid #374151; }
+        
+        /* Lógica de Elementos */
+        .elem-inert { opacity: 0.15; filter: grayscale(100%); transform: scale(0.9); transition: all 0.3s; }
+        .elem-waning { opacity: 0.7; filter: sepia(60%) hue-rotate(-50deg) saturate(300%); text-shadow: 0 0 8px #fbbf24; }
+        .elem-strong { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 5px white); }
+
+        /* Animaciones */
+        .slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        
+        .card-flip { transition: transform 0.6s; transform-style: preserve-3d; }
+        
+        /* Utilidades */
+        .tap-target { min-height: 44px; min-width: 44px; }
+        button { touch-action: manipulation; }
+        
+        /* Pestañas */
+        .tab-active { border-bottom: 2px solid var(--gh-gold); color: var(--gh-gold); }
+        .tab-inactive { color: #6b7280; }
+
+        /* Iconos Sociales */
+        .social-icon:hover { transform: translateY(-2px); filter: drop-shadow(0 0 5px var(--gh-gold)); }
+        .social-icon path { fill: #9ca3af; transition: fill 0.3s; }
+        .social-icon:hover path { fill: var(--gh-gold); }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- CABECERA: Barra de Estado -->
+    <header class="bg-gray-900 border-b border-gray-700 shrink-0 z-20 shadow-lg">
+        <div class="max-w-2xl mx-auto px-3 py-2">
+            <div class="flex justify-between items-center mb-2">
+                <div class="flex items-baseline gap-2">
+                    <span class="text-amber-500 text-xl gh-font font-bold hidden sm:inline">Gloomhaven: Fauces del León</span>
+                    <span class="text-amber-500 text-xl gh-font font-bold sm:hidden">GFdL</span>
+                    <span class="text-[10px] text-gray-500 font-mono uppercase">Companion (Fan Made)</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="text-xs text-gray-400 uppercase tracking-widest">Ronda <span id="round-cnt" class="text-white text-base font-bold">1</span></div>
+                    <button onclick="resetCampaign()" class="text-gray-600 text-xs hover:text-red-500" title="Reiniciar Partida">↺</button>
+                </div>
+            </div>
+            
+            <!-- Barra de Elementos -->
+            <div class="flex justify-between bg-black bg-opacity-40 rounded-lg p-1 border border-gray-800">
+                <div id="elements-bar" class="flex w-full justify-around"></div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ÁREA DE CONTENIDO PRINCIPAL -->
+    <main class="flex-grow overflow-y-auto relative scroll-smooth" id="main-scroll">
+        <div class="max-w-2xl mx-auto p-3 pb-24 space-y-4">
+            
+            <!-- VISTA: BATALLA -->
+            <div id="view-battle" class="view-section">
+                <!-- Barra de Acciones -->
+                <div class="flex gap-2 mb-4 sticky top-0 z-10 py-2 bg-gradient-to-b from-[#151a24] via-[#151a24] to-transparent">
+                    <button onclick="newRoundPhase()" class="flex-1 bg-amber-900/90 border border-amber-700 text-amber-100 py-2 rounded shadow text-sm font-bold backdrop-blur-sm hover:bg-amber-800 transition">
+                        ⚔️ Planificar
+                    </button>
+                    <button onclick="endRoundProcess()" class="flex-1 bg-gray-800/90 border border-gray-600 text-gray-300 py-2 rounded shadow text-sm font-bold backdrop-blur-sm hover:bg-gray-700 transition">
+                        🌙 Fin Ronda
+                    </button>
+                    <button onclick="toggleModal('add-modal')" class="bg-blue-900/90 border border-blue-700 text-white px-4 rounded shadow text-xl font-bold backdrop-blur-sm hover:bg-blue-800 transition">+</button>
+                </div>
+
+                <div id="battle-list" class="space-y-3"></div>
+            </div>
+
+            <!-- VISTA: REGLAS (ORÁCULO) -->
+            <div id="view-rules" class="view-section hidden">
+                <div class="glass-panel rounded-lg p-4 border-amber-900/50">
+                    <h2 class="text-xl text-amber-500 gh-font mb-2 text-center">Oráculo de Reglas</h2>
+                    
+                    <!-- Botón de Descarga PDF -->
+                    <div class="mb-6 text-center">
+                        <a href="https://cdn.svc.asmodee.net/production-asmodeees/uploads/2023/06/CPHGH03ES_Aprende_a_jugar_ES.pdf" target="_blank" 
+                           class="inline-flex items-center gap-2 bg-amber-700 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition shadow-lg border border-amber-500">
+                            <span>📄</span> Descargar Manual PDF Oficial en Español
+                        </a>
+                    </div>
+                    
+                    <div class="relative mb-4">
+                        <input type="text" id="rule-search" onkeyup="searchRules()" placeholder="Buscar regla (ej: Saqueo, Linea de visión...)" 
+                               class="w-full bg-gray-900 border border-gray-600 rounded p-3 pl-10 text-white focus:border-amber-500 outline-none transition">
+                        <span class="absolute left-3 top-3 text-gray-500">🔍</span>
+                    </div>
+
+                    <div id="rule-results" class="space-y-3 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
+                        <div class="text-center text-gray-600 text-sm mt-10">
+                            Escribe un término para consultar el glosario ampliado.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FOOTER DE AUTOR (PORTAFOLIO) -->
+            <footer class="mt-12 pt-8 pb-4 border-t border-gray-800 text-center">
+                <p class="text-gray-500 text-xs mb-3 uppercase tracking-wider">Diseñado y Desarrollado por Juan Luis Valverde Salgueiro</p>
+                <div class="flex justify-center gap-6 items-center">
+                    <!-- LinkedIn -->
+                    <a href="https://www.linkedin.com/in/juanluis-valverde/" target="_blank" rel="noopener noreferrer" class="social-icon" title="LinkedIn">
+                        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                    </a>
+                    
+                    <!-- Behance (ICONO CORREGIDO) -->
+                    <a href="https://www.behance.net/estudiosventorrillo" target="_blank" rel="noopener noreferrer" class="social-icon" title="Behance">
+                        <svg class="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M16.969 16.927a2.561 2.561 0 0 0 1.901.677 2.501 2.501 0 0 0 1.531-.475c.362-.235.636-.584.779-.99h2.585a5.091 5.091 0 0 1-1.9 2.896 5.292 5.292 0 0 1-3.091.88 5.839 5.839 0 0 1-2.284-.433 4.871 4.871 0 0 1-1.723-1.211 5.657 5.657 0 0 1-1.08-1.874 7.057 7.057 0 0 1-.383-2.393c-.005-.8.129-1.595.396-2.349a5.313 5.313 0 0 1 5.088-3.604 4.87 4.87 0 0 1 2.376.563c.661.362 1.231.87 1.668 1.485a6.2 6.2 0 0 1 .943 2.133c.194.821.263 1.666.205 2.508h-7.699c-.063.79.184 1.574.688 2.187ZM6.947 4.084a8.065 8.065 0 0 1 1.928.198 4.29 4.29 0 0 1 1.49.638c.418.303.748.711.958 1.182.241.579.357 1.203.341 1.83a3.506 3.506 0 0 1-.506 1.961 3.726 3.726 0 0 1-1.503 1.287 3.588 3.588 0 0 1 2.027 1.437c.464.747.697 1.615.67 2.494a4.593 4.593 0 0 1-.423 2.032 3.945 3.945 0 0 1-1.163 1.413 5.114 5.114 0 0 1-1.683.807 7.135 7.135 0 0 1-1.928.259H0V4.084h6.947Zm-.235 12.9c.308.004.616-.029.916-.099a2.18 2.18 0 0 0 .766-.332c.228-.158.411-.371.534-.619.142-.317.208-.663.191-1.009a2.08 2.08 0 0 0-.642-1.715 2.618 2.618 0 0 0-1.696-.505h-3.54v4.279h3.471Zm13.635-5.967a2.13 2.13 0 0 0-1.654-.619 2.336 2.336 0 0 0-1.163.259 2.474 2.474 0 0 0-.738.62 2.359 2.359 0 0 0-.396.792c-.074.239-.12.485-.137.734h4.769a3.239 3.239 0 0 0-.679-1.785l-.002-.001Zm-13.813-.648a2.254 2.254 0 0 0 1.423-.433c.399-.355.607-.88.56-1.413a1.916 1.916 0 0 0-.178-.891 1.298 1.298 0 0 0-.495-.533 1.851 1.851 0 0 0-.711-.274 3.966 3.966 0 0 0-.835-.073H3.241v3.631h3.293v-.014ZM21.62 5.122h-5.976v1.527h5.976V5.122Z"/>
+                        </svg>
+                    </a>
+
+                    <!-- Instagram -->
+                    <a href="https://www.instagram.com/estudiosventorrillo/?hl=es" target="_blank" rel="noopener noreferrer" class="social-icon" title="Instagram">
+                        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                    </a>
+                </div>
+            </footer>
+        </div>
+    </main>
+
+    <!-- NAVEGACIÓN INFERIOR -->
+    <nav class="fixed bottom-0 w-full bg-gray-900 border-t border-gray-700 pb-safe z-30">
+        <div class="flex justify-around max-w-2xl mx-auto">
+            <button onclick="switchTab('battle')" id="tab-battle" class="flex-1 py-3 text-center tab-active transition-colors">
+                <span class="block text-xl">⚔️</span>
+                <span class="text-[10px] uppercase font-bold">Batalla</span>
+            </button>
+            <button onclick="switchTab('rules')" id="tab-rules" class="flex-1 py-3 text-center tab-inactive transition-colors">
+                <span class="block text-xl">📜</span>
+                <span class="text-[10px] uppercase font-bold">Reglas</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- MODAL: AÑADIR ENTIDAD -->
+    <div id="add-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-gray-800 w-full max-w-sm rounded-xl border border-gray-600 shadow-2xl slide-up">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h3 class="text-amber-500 font-bold">Añadir Participante</h3>
+                <button onclick="toggleModal('add-modal')" class="text-gray-400 text-xl">&times;</button>
+            </div>
+            <div class="p-4 space-y-4">
+                <div>
+                    <p class="text-xs text-gray-400 uppercase mb-2">Héroes (Se recuperan si existen)</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="addChar('redGuard')" class="bg-red-900/50 border border-red-700 text-red-100 p-2 rounded text-sm hover:bg-red-900">Zarpas Rojizas</button>
+                        <button onclick="addChar('hatchet')" class="bg-blue-900/50 border border-blue-700 text-blue-100 p-2 rounded text-sm hover:bg-blue-900">Hachero</button>
+                        <button onclick="addChar('voidwarden')" class="bg-purple-900/50 border border-purple-700 text-purple-100 p-2 rounded text-sm hover:bg-purple-900">Vigía</button>
+                        <button onclick="addChar('demolitionist')" class="bg-yellow-900/50 border border-yellow-700 text-yellow-100 p-2 rounded text-sm hover:bg-yellow-900">Demoledor</button>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-400 uppercase mb-2">Enemigos</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="monster-input" placeholder="Nombre (ej: Ratas)" class="flex-1 bg-gray-900 border border-gray-600 rounded px-3 text-white">
+                        <button onclick="addMonster()" class="bg-gray-600 text-white px-4 rounded font-bold hover:bg-gray-500">Añadir</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script>
+        // --- GESTIÓN DE ESTADO Y PERSISTENCIA ---
+        const STATE_KEY = 'jotl_companion_save_v1';
+        
+        let appState = {
+            round: 1,
+            elements: { fire: 0, ice: 0, plant: 0, wind: 0, light: 0, dark: 0 },
+            participants: []
+        };
+
+        // Cargar al inicio
+        function loadState() {
+            const saved = localStorage.getItem(STATE_KEY);
+            if (saved) {
+                try {
+                    appState = JSON.parse(saved);
+                    console.log("Estado cargado.");
+                } catch(e) { console.error("Error cargando save", e); }
+            }
+            renderAll();
+        }
+
+        function saveState() {
+            localStorage.setItem(STATE_KEY, JSON.stringify(appState));
+        }
+
+        function resetCampaign() {
+            if(confirm("¿Reiniciar toda la partida? Se borrarán héroes y progreso.")) {
+                localStorage.removeItem(STATE_KEY);
+                location.reload();
+            }
+        }
+
+        // --- CONSTANTES ---
+        const ELEMENTS = ['fire', 'ice', 'plant', 'wind', 'light', 'dark'];
+        const ELEM_ICONS = { fire: '🔥', ice: '❄️', plant: '🌿', wind: '💨', light: '☀️', dark: '🌑' };
+        const ELEM_COLORS = { fire: 'text-red-500', ice: 'text-cyan-300', plant: 'text-green-500', wind: 'text-gray-300', light: 'text-yellow-300', dark: 'text-purple-400' };
+        
+        const CONDITIONS = ['poison', 'wound', 'muddle', 'immobilize', 'stun', 'disarm', 'strengthen', 'shield'];
+        const COND_ICONS = { poison: '☣️', wound: '🩸', muddle: '🌀', immobilize: '👢', stun: '💫', disarm: '🗡️', strengthen: '💪', shield: '🛡️' };
+        const COND_NAMES_ES = { 
+            poison: 'Veneno', wound: 'Herida', muddle: 'Confusión', immobilize: 'Inmovilizar', 
+            stun: 'Aturdir', disarm: 'Desarmar', strengthen: 'Fortalecer', shield: 'Escudo' 
+        };
+
+        // Definiciones de Personajes
+        const CHAR_DEFS = {
+            redGuard: { name: "Zarpas Rojizas", class: "Tanque", hp: 10, color: "border-red-600" },
+            hatchet: { name: "Hachero", class: "Daño a Distancia", hp: 10, color: "border-blue-600" },
+            voidwarden: { name: "Vigía", class: "Apoyo", hp: 8, color: "border-purple-600" },
+            demolitionist: { name: "Demoledor", class: "Cuerpo a Cuerpo", hp: 8, color: "border-yellow-600" }
+        };
+
+        // Mazo de Modificadores de Monstruo (Estándar Simplificado)
+        const BASE_MODIFIER_DECK = [
+            "+0", "+0", "+0", "+0", "+0", "+0", 
+            "+1", "+1", "+1", "+1", "+1", 
+            "-1", "-1", "-1", "-1", "-1", 
+            "+2", "-2", "2x", "Fallo"
+        ];
+
+        // --- LÓGICA PRINCIPAL ---
+
+        function init() {
+            loadState();
+        }
+
+        function renderAll() {
+            document.getElementById('round-cnt').innerText = appState.round;
+            renderElements();
+            renderBattle();
+        }
+
+        // Elementos
+        function renderElements() {
+            const container = document.getElementById('elements-bar');
+            container.innerHTML = ELEMENTS.map(k => {
+                const state = appState.elements[k];
+                const stateClass = state === 2 ? 'elem-strong' : (state === 1 ? 'elem-waning' : 'elem-inert');
+                return `<div onclick="cycleElement('${k}')" class="cursor-pointer text-2xl select-none ${stateClass} ${ELEM_COLORS[k]}">${ELEM_ICONS[k]}</div>`;
+            }).join('');
+        }
+
+        function cycleElement(k) {
+            appState.elements[k] = (appState.elements[k] === 0) ? 2 : 0;
+            saveState();
+            renderElements();
+        }
+
+        // Lista de Batalla
+        function renderBattle(isPlanning = false) {
+            const list = document.getElementById('battle-list');
+            list.innerHTML = '';
+
+            if (isPlanning) {
+                list.innerHTML += `
+                    <div class="bg-gray-800/80 border border-amber-500/50 p-3 rounded text-center mb-4 animate-pulse">
+                        <p class="text-amber-400 text-xs uppercase font-bold mb-2">Fase de Iniciativa</p>
+                        <button onclick="sortInitiative()" class="w-full bg-gradient-to-r from-green-800 to-green-700 text-white font-bold py-3 rounded shadow-lg text-lg active:scale-95 transition">
+                            ORDENAR TURNOS
+                        </button>
+                    </div>`;
+            }
+
+            if (appState.participants.length === 0) {
+                list.innerHTML += `<div class="text-center text-gray-600 mt-8 p-4 border border-dashed border-gray-700 rounded">
+                    <p>Mesa vacía</p><p class="text-xs">Pulsa + para añadir héroes o monstruos</p>
+                </div>`;
+                return;
+            }
+
+            appState.participants.forEach(p => {
+                if (p.type === 'character' && p.exhausted) return;
+                
+                if (p.type === 'character') {
+                    list.innerHTML += renderChar(p, isPlanning);
+                } else {
+                    list.innerHTML += renderMonster(p, isPlanning);
+                }
+            });
+        }
+
+        function renderChar(p, isPlanning) {
+            const conds = CONDITIONS.map(c => {
+                const active = p.conditions[c] ? `bg-gray-700 border-white text-white` : `text-gray-600 border-transparent opacity-30`;
+                return `<button onclick="toggleCond(${p.id}, '${c}')" title="${COND_NAMES_ES[c]}" class="w-8 h-8 rounded border ${active} flex items-center justify-center text-sm transition-all">${COND_ICONS[c]}</button>`;
+            }).join('');
+
+            const dying = p.hp <= 0 ? 'grayscale opacity-60' : '';
+            // Mostrar el nombre de clase correcto
+            const classNameDisplay = CHAR_DEFS[p.classType] ? CHAR_DEFS[p.classType].class : p.classType;
+
+            return `
+            <div class="bg-gray-800 border-l-4 ${CHAR_DEFS[p.classType].color} rounded p-3 shadow-md slide-up ${dying}">
+                <div class="flex justify-between mb-2">
+                    <div onclick="renameP(${p.id})" class="cursor-pointer group">
+                        <h3 class="font-bold text-white leading-none flex items-center gap-2">
+                            ${p.name} 
+                            <span class="text-[10px] text-gray-500 group-hover:text-amber-500 transition-colors">✎</span>
+                        </h3>
+                        <span class="text-xs text-gray-400">${classNameDisplay}</span>
+                    </div>
+                    <div class="bg-black/30 rounded p-1 min-w-[3rem] text-center">
+                        <span class="text-[9px] text-gray-500 block">INIC</span>
+                        ${isPlanning 
+                            ? `<input type="number" value="${p.initiative}" onchange="updateInit(${p.id}, this.value)" class="w-full bg-gray-700 text-white text-center font-bold rounded border border-gray-600">`
+                            : `<span class="text-xl font-bold text-white">${p.initiative}</span>`
+                        }
+                    </div>
+                </div>
+                
+                <!-- Estadísticas -->
+                <div class="flex justify-between items-center gap-2 mb-3">
+                    <div class="flex items-center bg-black/20 rounded p-1 border border-gray-700">
+                        <button onclick="modHP(${p.id}, -1)" class="w-8 h-8 bg-red-900/50 text-white rounded font-bold">-</button>
+                        <span class="w-10 text-center font-bold text-2xl text-white">${p.hp}</span>
+                        <button onclick="modHP(${p.id}, 1)" class="w-8 h-8 bg-green-900/50 text-white rounded font-bold">+</button>
+                    </div>
+                    
+                    <div class="flex flex-col items-end">
+                        <span class="text-[9px] text-blue-400 font-bold">ESCUDO</span>
+                        <div class="flex items-center">
+                            <button onclick="modShield(${p.id}, -1)" class="text-gray-500 px-2">-</button>
+                            <span class="text-lg font-bold text-blue-200">${p.activeShield}</span>
+                            <button onclick="modShield(${p.id}, 1)" class="text-gray-500 px-2">+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Condiciones -->
+                <div class="flex flex-wrap gap-1 justify-center mb-2">${conds}</div>
+
+                <!-- Pie -->
+                <div class="flex justify-between items-center border-t border-gray-700 pt-2 mt-1">
+                    <div class="flex gap-3 text-xs text-gray-400">
+                        <span onclick="modStat(${p.id}, 'gold', 1)" class="cursor-pointer">💰 ${p.gold}</span>
+                        <span onclick="modStat(${p.id}, 'xp', 1)" class="cursor-pointer">✨ ${p.xp}</span>
+                    </div>
+                    <button onclick="removeP(${p.id})" class="text-[10px] text-red-900 font-bold">RETIRAR</button>
+                </div>
+            </div>`;
+        }
+
+        function renderMonster(p, isPlanning) {
+            // Lógica de mazo de monstruo
+            const lastMod = p.lastModifier || "Carta";
+            const modColor = lastMod.includes('-') ? 'text-red-400' : (lastMod.includes('+') || lastMod.includes('2x') ? 'text-green-400' : 'text-gray-400');
+            const shuffleAlert = p.needsShuffle ? 'animate-pulse text-yellow-500' : 'hidden';
+
+            const unitsHtml = p.units.map((u, idx) => {
+                const uDying = u.hp <= 0 ? 'opacity-40' : '';
+                // Usar todas las condiciones menos escudo (shield) que ya se suele tener en cuenta numéricamente si se desea
+                // En el mapa de abajo, filtramos 'shield' para los iconos de monstruos si queremos ahorrar espacio, 
+                // pero el usuario pidió todos. Lo incluiremos todo menos Shield numérico para no saturar,
+                // o todo el set. Vamos a poner el set completo de condiciones relevantes.
+                
+                const uConds = CONDITIONS.filter(c => c !== 'shield').map(c => {
+                    const active = u.conditions[c] ? 'opacity-100 scale-125' : 'opacity-20 grayscale';
+                    // Ajuste de tamaño para que quepan más iconos
+                    return `<span onclick="toggleMonCond(${p.id}, ${idx}, '${c}')" title="${COND_NAMES_ES[c]}" class="cursor-pointer ${active} text-sm">${COND_ICONS[c]}</span>`;
+                }).join('');
+
+                return `
+                <div class="bg-black/20 p-2 rounded border border-gray-700 relative ${uDying}">
+                    <span class="absolute top-0 left-1 text-[10px] text-gray-500 font-bold">#${idx+1}</span>
+                    <div class="flex items-center justify-between mt-3 mb-1">
+                        <button onclick="modMonHP(${p.id}, ${idx}, -1)" class="text-red-500 font-bold px-1">-</button>
+                        <span class="text-xl font-bold ${u.hp<=0 ? 'text-gray-600' : 'text-white'}">${u.hp}</span>
+                        <button onclick="modMonHP(${p.id}, ${idx}, 1)" class="text-green-500 font-bold px-1">+</button>
+                    </div>
+                    <div class="flex flex-wrap justify-center gap-1 mt-2">${uConds}</div>
+                    <button onclick="killUnit(${p.id}, ${idx})" class="absolute top-0 right-1 text-[10px] text-red-900">X</button>
+                </div>`;
+            }).join('');
+
+            return `
+            <div class="bg-gray-800 border-l-4 border-gray-500 rounded p-3 shadow-md slide-up">
+                <div class="flex justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="bg-black/30 rounded p-1 w-12 text-center">
+                            <span class="text-[9px] text-gray-500 block">INIC</span>
+                             ${isPlanning 
+                                ? `<input type="number" value="${p.initiative}" onchange="updateInit(${p.id}, this.value)" class="w-full bg-gray-700 text-white text-center font-bold rounded p-0">`
+                                : `<span class="text-lg font-bold text-gray-300">${p.initiative}</span>`
+                            }
+                        </div>
+                        <h3 class="font-bold text-gray-200">${p.name}</h3>
+                    </div>
+                    
+                    <!-- Mazo Modificador -->
+                    <div class="flex items-center gap-2">
+                        <span class="${shuffleAlert} text-xs" title="Barajar">↺</span>
+                        <button onclick="drawModifier(${p.id})" class="bg-gray-700 border border-gray-600 px-2 py-1 rounded min-w-[3rem] text-center">
+                            <span class="text-sm font-bold ${modColor}">${lastMod}</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 mb-2">
+                    ${unitsHtml}
+                    <button onclick="addUnit(${p.id})" class="bg-gray-700/50 border border-dashed border-gray-600 rounded flex items-center justify-center text-gray-500 text-xl">+</button>
+                </div>
+                
+                <div class="text-right">
+                    <button onclick="removeP(${p.id})" class="text-[10px] text-gray-600">ELIMINAR GRUPO</button>
+                </div>
+            </div>`;
+        }
+
+        // --- LÓGICA: ACCIONES ---
+
+        function newRoundPhase() {
+            const active = appState.participants.filter(p => p.type === 'character' && !p.exhausted).length;
+            if (active === 0 && appState.participants.some(p => p.type==='character')) alert("Todos los héroes están agotados.");
+            renderBattle(true);
+        }
+
+        function sortInitiative() {
+            appState.participants.sort((a,b) => a.initiative - b.initiative);
+            saveState();
+            renderBattle(false);
+        }
+
+        function endRoundProcess() {
+            if(!confirm("¿Finalizar Ronda?")) return;
+            
+            // Decaimiento de Elementos
+            for(let k in appState.elements) {
+                if(appState.elements[k] > 0) appState.elements[k]--;
+            }
+
+            // Limpieza
+            appState.participants = appState.participants.filter(p => {
+                if(p.type === 'monster') {
+                    p.units = p.units.filter(u => u.hp > 0);
+                    return p.units.length > 0;
+                }
+                if(p.type === 'character') {
+                    if(p.hp <= 0) p.exhausted = true;
+                    p.activeShield = 0; // Reiniciar escudo
+                    if(p.conditions.strengthen) p.conditions.strengthen = false;
+                }
+                return true;
+            });
+
+            // Barajar Monstruos si es necesario
+            appState.participants.forEach(p => {
+                if(p.type === 'monster' && p.needsShuffle) {
+                    p.deck = [...BASE_MODIFIER_DECK]; // Reset simple
+                    p.needsShuffle = false;
+                    p.lastModifier = "Barajado";
+                }
+            });
+
+            appState.round++;
+            saveState();
+            renderAll();
+            newRoundPhase(); // Ir directamente a planificar la siguiente ronda
+        }
+
+        function addChar(type) {
+            const existing = appState.participants.find(p => p.type === 'character' && p.classType === type);
+            if (existing) {
+                existing.exhausted = false;
+                existing.hp = CHAR_DEFS[type].hp;
+            } else {
+                appState.participants.push({
+                    id: Date.now(), type: 'character', classType: type,
+                    name: CHAR_DEFS[type].name, hp: CHAR_DEFS[type].hp, maxHp: CHAR_DEFS[type].hp,
+                    xp: 0, gold: 0, initiative: 99, activeShield: 0, conditions: {}, exhausted: false
+                });
+            }
+            saveState(); renderBattle(); toggleModal('add-modal');
+        }
+
+        function addMonster() {
+            const name = document.getElementById('monster-input').value || "Monstruo";
+            appState.participants.push({
+                id: Date.now(), type: 'monster', name: name, initiative: 50,
+                deck: [...BASE_MODIFIER_DECK], needsShuffle: false, lastModifier: "Carta",
+                units: [{hp: 6, conditions:{}}]
+            });
+            document.getElementById('monster-input').value = "";
+            saveState(); renderBattle(); toggleModal('add-modal');
+        }
+
+        function renameP(id) {
+            const p = appState.participants.find(x => x.id === id);
+            if (p) {
+                const newName = prompt("Nuevo nombre para este personaje:", p.name);
+                if (newName && newName.trim() !== "") {
+                    p.name = newName.trim();
+                    saveState();
+                    renderBattle();
+                }
+            }
+        }
+
+        // Modificadores
+        function updateInit(id, val) { 
+            const p = appState.participants.find(x=>x.id===id); 
+            if(p) p.initiative = parseInt(val) || 99; 
+            saveState(); 
+        }
+        function modHP(id, v) { 
+            const p = appState.participants.find(x=>x.id===id); 
+            if(p) { 
+                // Sin límite superior para permitir subida de nivel
+                p.hp = Math.max(0, p.hp + v); 
+                
+                // Actualizar maxHp si se supera (Subida de Nivel)
+                if(p.hp > p.maxHp) p.maxHp = p.hp;
+                
+                saveState(); 
+                renderBattle(); 
+            }
+        }
+        function modStat(id, k, v) {
+            const p = appState.participants.find(x=>x.id===id);
+            if(p) { p[k] = Math.max(0, p[k]+v); saveState(); renderBattle(); }
+        }
+        function modShield(id, v) {
+            const p = appState.participants.find(x=>x.id===id);
+            if(p) { p.activeShield = Math.max(0, p.activeShield+v); saveState(); renderBattle(); }
+        }
+        function toggleCond(id, c) {
+            const p = appState.participants.find(x=>x.id===id);
+            if(p) { p.conditions[c] = !p.conditions[c]; saveState(); renderBattle(); }
+        }
+        function removeP(id) {
+            if(confirm("¿Retirar?")) {
+                appState.participants = appState.participants.filter(x=>x.id!==id);
+                saveState(); renderBattle();
+            }
+        }
+
+        // Específico Monstruo
+        function addUnit(pid) {
+            const p = appState.participants.find(x=>x.id===pid);
+            p.units.push({hp: 6, conditions:{}}); saveState(); renderBattle();
+        }
+        function modMonHP(pid, idx, v) {
+            const p = appState.participants.find(x=>x.id===pid);
+            p.units[idx].hp = Math.max(0, p.units[idx].hp+v); saveState(); renderBattle();
+        }
+        function toggleMonCond(pid, idx, c) {
+            const p = appState.participants.find(x=>x.id===pid);
+            p.units[idx].conditions[c] = !p.units[idx].conditions[c]; saveState(); renderBattle();
+        }
+        function killUnit(pid, idx) {
+            const p = appState.participants.find(x=>x.id===pid);
+            p.units.splice(idx, 1); saveState(); renderBattle();
+        }
+        function drawModifier(pid) {
+            const p = appState.participants.find(x=>x.id===pid);
+            if(p.deck.length === 0) p.deck = [...BASE_MODIFIER_DECK]; // Rebarajar si vacío
+            
+            const randIdx = Math.floor(Math.random() * p.deck.length);
+            const card = p.deck.splice(randIdx, 1)[0];
+            
+            p.lastModifier = card;
+            if(card === '2x' || card === 'Fallo') p.needsShuffle = true;
+            saveState(); renderBattle();
+        }
+
+        // --- EL ORÁCULO (MOTOR DE REGLAS AMPLIADO) ---
+        
+        const RULEBOOK_DB = [
+            { k: "iniciativa orden turno ronda", t: "Orden de Iniciativa", c: "Se revela una carta de cada personaje y monstruo. El número más bajo actúa primero. En caso de empate: Personaje > Monstruo. Si son dos personajes, desempata la segunda carta. Si son monstruos, élite > normal, luego menor número." },
+            { k: "movimiento saltar dificil obstaculo", t: "Movimiento y Salto", c: "Las figuras no pueden atravesar enemigos ni obstáculos (paredes verdes). SALTAR permite ignorar enemigos, obstáculos y trampas durante el movimiento, pero debe finalizar en un hexágono válido vacío." },
+            { k: "ataque distancia alcance rango", t: "Ataque a Distancia", c: "Alcance X: Puedes atacar a enemigos hasta X hexágonos de distancia. Si atacas a distancia a un enemigo ADYACENTE, sufres DESVENTAJA (roba 2, elige peor)." },
+            { k: "ventaja desventaja modificador", t: "Ventaja / Desventaja", c: "Ventaja: Roba 2 cartas, usa la mejor. Desventaja: Roba 2, usa la peor. Si tienes ambas a la vez, se cancelan. No se pueden acumular (2 ventajas = 1 ventaja)." },
+            { k: "descanso corto largo agotamiento recuperar cartas", t: "Descanso (Corto y Largo)", c: "CORTO: Al final de ronda. Pierde 1 carta al azar de descartes para recuperar el resto. LARGO: Iniciativa 99. Pierde 1 carta a tu elección, cura 2 de vida, refresca objetos gastados (girados)." },
+            { k: "elementos fuego hielo viento planta luz oscuridad", t: "Elementos", c: "Se generan al final del turno del usuario (estado Fuerte). Al final de cada ronda decaen: Fuerte -> Menguante -> Inerte. Solo se pueden consumir si están en Fuerte o Menguante." },
+            { k: "experiencia xp subir nivel", t: "Experiencia", c: "La XP no se gana por matar monstruos, sino por usar cartas con el símbolo de XP. Al subir de nivel, aumentas tu vida máxima y eliges nuevas cartas." },
+            { k: "escudo defensa armadura", t: "Escudo", c: "Reduce el daño recibido de un ataque en X puntos. Se aplica después de revelar la carta de ataque. No reduce daño de trampas, heridas ni daño directo (sufrir daño)." },
+            { k: "empujon tiron desplazar", t: "Empujón y Tirón", c: "Empujón: Aleja al objetivo X hexágonos de ti. Tirón: Acerca al objetivo X hexágonos. Deben alejarse/acercarse en cada paso. Si entran en trampa/terreno peligroso, sufren el efecto." },
+            { k: "monstruo atencion foco inteligencia", t: "Atención Monstruo", c: "1. Encuentra al enemigo al que puede atacar con MENOS movimiento (considerando trampas como obstáculos si puede evitarlas). 2. Si hay empate, el más cercano. 3. Si empate, el de iniciativa más rápida." },
+            { k: "monstruo movimiento carta", t: "Movimiento Monstruo", c: "Si la carta de turno del monstruo NO dice 'Movimiento', no se mueve. Si no dice 'Ataque', no ataca. Siempre hacen solo lo que dice su carta + bonos pasivos." },
+            { k: "linea vision muro pared ver", t: "Línea de Visión", c: "Puedes trazar una línea desde cualquier esquina de tu hexágono a cualquier esquina del objetivo sin tocar paredes (líneas negras gruesas). Obstáculos y figuras NO bloquean la visión." },
+            { k: "objetivo target zona area", t: "Objetivo vs Alcance", c: "'Objetivo X' significa que puedes atacar a X enemigos distintos dentro de tu alcance. Para ataques de área (hexágonos rojos), solo necesitas línea de visión a uno de los objetivos." },
+            { k: "saqueo loot moneda oro tesoro", t: "Saqueo", c: "Fin de turno: Saqueas automáticamente tu propio hexágono. Acción 'Saqueo X': Saqueas tu casilla y todas las que estén a distancia X." },
+            { k: "trampas daño peligroso", t: "Trampas y Terreno", c: "Trampa: Se activa al entrar. Causa daño/efecto y se retira. Terreno Difícil (borde morado): Cuesta 2 puntos de movimiento entrar. Terreno Peligroso (borde naranja): Sufres daño al entrar pero no se retira." },
+            { k: "curacion veneno heal", t: "Curación y Veneno", c: "Si estás Envenenado y recibes Curación: NO recuperas vida, pero eliminas el estado de Veneno. Si tienes Herida y curas: recuperas vida y eliminas Herida." },
+            { k: "invocacion sumon aliado", t: "Invocaciones", c: "Actúan justo antes que tú. Tienen IA de monstruo (se mueven y atacan al enemigo más cercano). No las controlas directamente. Mueren si llegan a 0 vida y no dejan moneda." },
+            { k: "objetos items pocion equipo", t: "Objetos", c: "Consumibles (icono tachado): Un uso por escenario. Gastados (icono girar): Se recuperan con Descanso Largo. Pasivos: Efecto constante." }
+        ];
+
+        function searchRules() {
+            const q = document.getElementById('rule-search').value.toLowerCase();
+            const container = document.getElementById('rule-results');
+            container.innerHTML = '';
+
+            if(q.length < 2) return;
+
+            const hits = RULEBOOK_DB.filter(r => r.k.includes(q) || r.t.toLowerCase().includes(q));
+
+            if(hits.length === 0) {
+                container.innerHTML = `<div class="text-center text-gray-500 italic">No encontré reglas para "${q}".</div>`;
+                return;
+            }
+
+            hits.forEach(r => {
+                container.innerHTML += `
+                <div class="bg-gray-900 border border-amber-900/50 p-3 rounded mb-2">
+                    <h4 class="text-amber-500 font-bold text-sm border-b border-gray-700 pb-1 mb-1">${r.t}</h4>
+                    <p class="text-gray-300 text-sm leading-relaxed">${r.c}</p>
+                </div>`;
+            });
+        }
+
+        // --- UI HELPERS ---
+        function switchTab(t) {
+            document.getElementById('view-battle').classList.add('hidden');
+            document.getElementById('view-rules').classList.add('hidden');
+            document.getElementById('tab-battle').className = "flex-1 py-3 text-center tab-inactive transition-colors";
+            document.getElementById('tab-rules').className = "flex-1 py-3 text-center tab-inactive transition-colors";
+            
+            document.getElementById(`view-${t}`).classList.remove('hidden');
+            document.getElementById(`tab-${t}`).className = "flex-1 py-3 text-center tab-active transition-colors";
+        }
+
+        function toggleModal(id) {
+            const el = document.getElementById(id);
+            el.classList.toggle('hidden');
+        }
+
+        // Iniciar
+        init();
+
+    </script>
+</body>
+</html>
